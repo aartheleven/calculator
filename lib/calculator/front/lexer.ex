@@ -15,15 +15,15 @@ defmodule Calculator.Lexer do
 
   defp tokenize([], tokens), do: Enum.reverse([Token.new({:eof, ""}) | tokens])
 
-  defp tokenize(chars, tokens) do
+  defp tokenize(chars = [token | rest], tokens) do
     cond do
-      is_digit(hd(chars)) ->
-        read_digits(chars, {:integer, ""}, tokens)
+      is_digit(token) ->
+        read_digits(chars, tokens)
 
-      is_useless(hd(chars)) ->
-        tokenize(tl(chars), tokens)
+      is_useless(token) ->
+        tokenize(rest, tokens)
 
-      is_decimal_point(hd(chars)) ->
+      is_decimal_point(token) ->
         raise TokenExcept, message: "Floats must have decimal leading digits"
 
       true ->
@@ -31,21 +31,22 @@ defmodule Calculator.Lexer do
     end
   end
 
-  defp read_digits([curr | rest], {_, value}, _tokens)
-       when (is_decimal_point(curr) and is_decimal_point(hd(rest))) or
-              (is_decimal_point(curr) and not is_digit(hd(rest))),
-       do: raise TokenExcept, message: "Expected a valid token sequence, got: #{value <> curr <> hd(rest)}"
+  defp read_digits(chars, tokens) do
+    {num, rest} = Enum.split_while(chars, &(is_digit(&1) or is_decimal_point(&1)))
 
-  defp read_digits([curr | rest], {type, value}, tokens)
-       when is_digit(curr),
-       do: read_digits(rest, {type, value <> curr}, tokens)
+    if is_decimal_point(List.last(num)) do
+      raise TokenExcept, message: "Expected a valid token sequence, got: #{num}"
+    end
 
-  defp read_digits([curr | rest], {_, value}, tokens)
-       when is_decimal_point(curr) and is_digit(hd(rest)),
-       do: read_digits(tl(rest), {:float, value <> curr <> hd(rest)}, tokens)
+    decimal_count = Enum.count(num, &is_decimal_point/1)
+    num = Enum.join(num)
 
-  defp read_digits(rest, seq, tokens) do
-    token = Token.new(parse_seq(seq))
+    token =
+      case decimal_count do
+        0 -> Token.new({:integer, String.to_integer(num)})
+        1 -> Token.new({:float, String.to_float(num)})
+        _ -> raise TokenExcept, message: "Expected a valid token sequence, got: #{num}"
+      end
 
     tokenize(rest, [token | tokens])
   end
@@ -54,15 +55,5 @@ defmodule Calculator.Lexer do
     token = Token.new({:op, curr})
 
     tokenize(rest, [token | tokens])
-  end
-
-  defp parse_seq({type, value}) do
-    value =
-      case type do
-        :integer -> String.to_integer(value)
-        :float -> String.to_float(value)
-      end
-
-    {type, value}
   end
 end
